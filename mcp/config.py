@@ -20,15 +20,21 @@ _DEFAULTS = {
 
 
 def ensure_dirs():
-    SMART_LMS_DIR.mkdir(exist_ok=True)
-    SESSIONS_DIR.mkdir(exist_ok=True)
+    try:
+        SMART_LMS_DIR.mkdir(exist_ok=True)
+        SESSIONS_DIR.mkdir(exist_ok=True)
+    except OSError as e:
+        raise OSError(f"Cannot create Smart LMS data directory: {e}") from e
     if not CONFIG_FILE.exists():
         CONFIG_FILE.write_text(json.dumps(_DEFAULTS, indent=2))
 
 
 def get_config() -> dict:
     ensure_dirs()
-    data = json.loads(CONFIG_FILE.read_text())
+    try:
+        data = json.loads(CONFIG_FILE.read_text())
+    except (json.JSONDecodeError, OSError):
+        data = {}
     return {**_DEFAULTS, **data}
 
 
@@ -47,7 +53,12 @@ def get_lms_credentials() -> tuple[str | None, str | None]:
 
 
 def store_lms_credentials(username: str, password: str):
-    keyring.set_password(KEYCHAIN_SERVICE, username, password)
+    try:
+        keyring.set_password(KEYCHAIN_SERVICE, username, password)
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to store credentials in system keychain: {e}"
+        ) from e
     cfg = get_config()
     cfg["lms_username"] = username
     save_config(cfg)

@@ -44,3 +44,15 @@ def test_store_and_get_lms_credentials():
         )
         u, p = cfg_mod.get_lms_credentials()
         assert u == "alice" and p == "secret"
+
+
+def test_find_free_port_returns_preferred_when_available():
+    port = cfg_mod.find_free_port(9999)
+    assert isinstance(port, int)
+    assert port > 0
+
+
+def test_store_lms_credentials_raises_on_keyring_failure():
+    with patch("keyring.set_password", side_effect=Exception("no keyring")):
+        with pytest.raises(RuntimeError, match="system keychain"):
+            cfg_mod.store_lms_credentials("bob", "pass")
