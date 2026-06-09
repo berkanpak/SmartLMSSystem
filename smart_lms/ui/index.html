@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Smart LMS</title>
+<link rel="stylesheet" href="/static/icons/regular/style.css" />
+<link rel="stylesheet" href="/static/icons/bold/style.css" />
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark"><i class="ph-bold ph-graduation-cap"></i></div>
+      <div class="name">Smart LMS</div>
+    </div>
+    <button class="new-chat"><i class="ph ph-plus"></i> New study session</button>
+    <div class="nav-label">Recent</div>
+    <div id="session-list">
+      <!-- populated by app.js loadSessions() -->
+    </div>
+    <div class="sidebar-footer">
+      <div class="user-row">
+        <div class="avatar">U</div>
+        <div style="font-size:13px;">Student</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="topbar">
+      <div class="title">Smart LMS <small>· ready</small></div>
+      <button class="theme-toggle" onclick="toggleTheme()"><i class="ph ph-circle-half"></i> Theme</button>
+    </div>
+
+    <div class="thread-wrap">
+      <div id="thread" class="thread">
+        <!-- messages appended by app.js -->
+      </div>
+    </div>
+
+    <!-- Composer -->
+    <div class="composer-wrap">
+      <div class="popover" id="pop">
+        <div class="pop-title">Your courses</div>
+        <div id="course-list">
+          <!-- populated by app.js loadCourses() -->
+        </div>
+        <div class="pop-divider"></div>
+        <div class="pop-title">Add more sources</div>
+        <div class="pop-item connect-row"><i class="ph lead ph-google-drive-logo"></i> Connect Google Drive</div>
+        <div class="pop-item connect-row"><i class="ph lead ph-notebook"></i> Connect NotebookLM</div>
+      </div>
+
+      <div class="composer">
+        <div class="attached" id="attached"></div>
+        <div class="input-row">
+          <textarea rows="1" placeholder='Ask anything, or say "examine me for MATH1112 finals"…'></textarea>
+        </div>
+        <div class="toolbar">
+          <button class="tool-btn" onclick="togglePop()"><i class="ph ph-books"></i> Courses</button>
+          <button class="tool-btn"><i class="ph ph-paperclip"></i> Documents</button>
+          <button class="tool-btn"><i class="ph ph-plug"></i> Connect</button>
+          <div class="spacer"></div>
+          <button class="send"><i class="ph-bold ph-arrow-up"></i></button>
+        </div>
+      </div>
+      <div class="hint-line">Smart LMS uses your selected course materials as sources. Output renders as flashcards, quizzes &amp; summaries.</div>
+    </div>
+  </main>
+
+<script src="/static/app.js" defer></script>
+</body>
+</html>
