@@ -5,9 +5,11 @@ from pptx import Presentation
 
 def extract_pdf_text(file_path: str) -> str:
     doc = fitz.open(file_path)
-    parts = [page.get_text() for page in doc]
-    doc.close()
-    return "".join(parts)
+    try:
+        parts = [page.get_text() for page in doc]
+        return "".join(parts)
+    finally:
+        doc.close()
 
 
 def extract_pptx_text(file_path: str) -> str:
