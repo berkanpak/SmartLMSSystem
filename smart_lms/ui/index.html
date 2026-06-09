@@ -43,8 +43,8 @@
 
     <!-- Composer -->
     <div class="composer-wrap">
-      <div class="popover" id="pop">
-        <div class="pop-title">Your courses</div>
+      <div class="popover" id="pop-courses">
+        <div class="pop-title">SELECTED COURSES</div>
         <div id="course-list">
           <!-- populated by app.js loadCourses() -->
         </div>
@@ -53,6 +53,13 @@
         <div class="pop-item connect-row"><i class="ph lead ph-google-drive-logo"></i> Connect Google Drive</div>
         <div class="pop-item connect-row"><i class="ph lead ph-notebook"></i> Connect NotebookLM</div>
       </div>
+      
+      <div class="popover" id="pop-docs" style="width: 320px; left: 60%;">
+        <div class="pop-title">SELECT MATERIALS</div>
+        <div id="doc-list">
+           <div class="pop-item"><div class="sub">Select a course first</div></div>
+        </div>
+      </div>
 
       <div class="composer">
         <div class="attached" id="attached"></div>
@@ -60,8 +67,8 @@
           <textarea rows="1" placeholder='Ask anything, or say "examine me for MATH1112 finals"…'></textarea>
         </div>
         <div class="toolbar">
-          <button class="tool-btn" onclick="togglePop()"><i class="ph ph-books"></i> Courses</button>
-          <button class="tool-btn"><i class="ph ph-paperclip"></i> Documents</button>
+          <button class="tool-btn" onclick="togglePop(event, 'pop-courses')"><i class="ph ph-books"></i> Courses</button>
+          <button class="tool-btn" onclick="togglePop(event, 'pop-docs')" id="btn-docs" style="display:none;"><i class="ph ph-paperclip"></i> Documents</button>
           <button class="tool-btn"><i class="ph ph-plug"></i> Connect</button>
           <div class="spacer"></div>
           <button class="send"><i class="ph-bold ph-arrow-up"></i></button>

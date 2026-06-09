@@ -51,6 +51,41 @@ def _list_materials_raw(course_id: int) -> list[dict]:
     ]
 
 
+import concurrent.futures
+
+
+def _get_material_text_raw(course_id: int, material_ids: list[str]) -> list[dict]:
+    """Download and extract text from selected materials in parallel.
+    Returns [{title, text}] or [{title, text, error}] on failure."""
+    all_mats = _list_materials_raw(course_id)
+    selected = [m for m in all_mats if m["id"] in material_ids]
+    
+    def process_material(mat, tmp_dir):
+        try:
+            resp = requests.get(mat["link"], stream=True, timeout=30)
+            resp.raise_for_status()
+            fpath = os.path.join(tmp_dir, mat["title"])
+            with open(fpath, "wb") as f:
+                for chunk in resp.iter_content(8192):
+                    f.write(chunk)
+            text = extract_document_text(fpath)
+            if text.strip():
+                return {"title": mat["title"], "text": text}
+        except Exception as e:
+            return {"title": mat["title"], "text": "", "error": str(e)}
+        return None
+
+    results = []
+    with tempfile.TemporaryDirectory() as tmp:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(process_material, mat, tmp) for mat in selected]
+            for future in concurrent.futures.as_completed(futures):
+                res = future.result()
+                if res:
+                    results.append(res)
+    return results
+
+
 def register_lms_tools(mcp: FastMCP):
 
     @mcp.tool()
@@ -74,21 +109,4 @@ def register_lms_tools(mcp: FastMCP):
     def get_material_text(course_id: int, material_ids: list[str]) -> list[dict]:
         """Download and extract text from selected materials.
         Returns [{title, text}] or [{title, text, error}] on failure."""
-        all_mats = _list_materials_raw(course_id)
-        selected = [m for m in all_mats if m["id"] in material_ids]
-        results = []
-        with tempfile.TemporaryDirectory() as tmp:
-            for mat in selected:
-                try:
-                    resp = requests.get(mat["link"], stream=True, timeout=30)
-                    resp.raise_for_status()
-                    fpath = os.path.join(tmp, mat["title"])
-                    with open(fpath, "wb") as f:
-                        for chunk in resp.iter_content(8192):
-                            f.write(chunk)
-                    text = extract_document_text(fpath)
-                    if text.strip():
-                        results.append({"title": mat["title"], "text": text})
-                except Exception as e:
-                    results.append({"title": mat["title"], "text": "", "error": str(e)})
-        return results
+        return _get_material_text_raw(course_id, material_ids)

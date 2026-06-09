@@ -9,23 +9,49 @@ function connectSSE() {
   es.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'blocks') renderBlocks(msg.blocks);
+      if (msg.type === 'blocks') renderBlocks(msg.blocks, true);
     } catch (_) {}
   };
   es.onerror = () => setTimeout(connectSSE, 3000);
+  
+  // Load history on connect to ensure refresh doesn't wipe content
+  loadHistory();
   return es;
+}
+
+async function loadHistory() {
+  try {
+    const res = await fetch(`/api/sessions/${SESSION_ID}`);
+    if (!res.ok) return;
+    const session = await res.json();
+    const thread = document.getElementById('thread');
+    if (!thread) return;
+    thread.innerHTML = '';
+    (session.turns || []).forEach(turn => {
+      if (turn.role === 'user') {
+        appendUserMessage(turn.text, [], [], false);
+      } else {
+        renderBlocks(turn.blocks || [], false);
+      }
+    });
+    // Scroll to bottom after loading history
+    setTimeout(() => {
+      thread.parentElement.scrollTop = thread.parentElement.scrollHeight;
+    }, 50);
+  } catch (_) {}
 }
 
 // ── Submit ────────────────────────────────────────────────────────────────────
 
 async function submitPrompt(text, courseIds, docIds) {
   if (!text.trim()) return;
+  appendUserMessage(text, courseIds, docIds, true);
+  showThinking();
   await fetch(`/api/prompt/${SESSION_ID}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, course_ids: courseIds, doc_ids: docIds }),
   });
-  appendUserMessage(text, courseIds, docIds);
 }
 
 // ── Sidebar sessions ──────────────────────────────────────────────────────────
@@ -37,11 +63,62 @@ async function loadSessions() {
     const list = document.getElementById('session-list');
     if (!list) return;
     list.innerHTML = sessions.map(s => `
-      <div class="nav-item" data-id="${s.id}">
+      <div class="nav-item ${s.id === SESSION_ID ? 'active' : ''}" data-id="${s.id}">
         <i class="ph ph-book-open"></i>
-        ${escHtml(s.title)}
+        <span class="session-title">${escHtml(s.title)}</span>
+        <div class="session-actions">
+          <button class="action-btn rename-btn" title="Rename"><i class="ph ph-pencil-simple"></i></button>
+          <button class="action-btn delete-btn" title="Delete"><i class="ph ph-trash"></i></button>
+        </div>
       </div>`).join('');
+    
+    list.querySelectorAll('.nav-item').forEach(el => {
+      const sid = el.dataset.id;
+      
+      // Navigation: click anywhere on the item EXCEPT action buttons
+      el.addEventListener('click', (e) => {
+        if (!e.target.closest('.action-btn')) {
+          window.location.href = `/?session=${sid}`;
+        }
+      });
+
+      // Rename functionality: ONLY on pencil button
+      const renameBtn = el.querySelector('.rename-btn');
+      renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const titleSpan = el.querySelector('.session-title');
+        const newTitle = prompt("Enter new session title:", titleSpan.textContent);
+        if (newTitle && newTitle.trim()) {
+          fetch(`/api/sessions/${sid}/rename`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: newTitle.trim() })
+          }).then(() => loadSessions());
+        }
+      });
+
+      // Delete functionality
+      el.querySelector('.delete-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm("Are you sure you want to delete this session?")) {
+          fetch(`/api/sessions/${sid}`, { method: 'DELETE' })
+            .then(() => {
+              if (sid === SESSION_ID) window.location.href = '/';
+              else loadSessions();
+            });
+        }
+      });
+    });
   } catch (_) {}
+}
+
+function initUserRow() {
+  const userRow = document.querySelector('.user-row');
+  if (userRow) {
+    userRow.addEventListener('click', () => {
+      alert("Student Profile: 24soft1016@isik.edu.tr\nLMS connected successfully.");
+    });
+  }
 }
 
 // ── Course picker ─────────────────────────────────────────────────────────────
@@ -99,12 +176,12 @@ function updateCourseChips() {
 
 // ── Thread rendering ──────────────────────────────────────────────────────────
 
-function appendUserMessage(text, courseIds, docIds) {
+function appendUserMessage(text, courseIds, docIds, scroll = true) {
   const thread = document.getElementById('thread');
   if (!thread) return;
   const courseNames = [...document.querySelectorAll('#course-list .pop-item.sel')]
     .map(el => el.querySelector('div > div').textContent.trim());
-  const pillsHtml = courseNames.map(n =>
+  const pillsHtml = (courseNames || []).map(n =>
     `<span class="src-pill"><i class="ph ph-book-bookmark"></i> ${escHtml(n)}</span>`
   ).join('');
   const msg = document.createElement('div');
@@ -114,10 +191,31 @@ function appendUserMessage(text, courseIds, docIds) {
     <div class="user-text">${escHtml(text)}</div>
     ${pillsHtml ? `<div class="source-pills">${pillsHtml}</div>` : ''}`;
   thread.appendChild(msg);
+  if (scroll) thread.parentElement.scrollTop = thread.parentElement.scrollHeight;
+}
+
+function showThinking() {
+  const thread = document.getElementById('thread');
+  if (!thread) return;
+  const msg = document.createElement('div');
+  msg.className = 'msg ai-msg thinking-msg';
+  msg.innerHTML = `
+    <div class="msg-role"><div class="dot ai"><i class="ph-bold ph-graduation-cap"></i></div><div class="who">Smart LMS</div></div>
+    <div class="ai-text thinking-dots"><span>.</span><span>.</span><span>.</span></div>
+  `;
+  thread.appendChild(msg);
   thread.parentElement.scrollTop = thread.parentElement.scrollHeight;
 }
 
-function renderBlocks(blocks) {
+function hideThinking() {
+  const thread = document.getElementById('thread');
+  if (!thread) return;
+  const thinkingMsgs = thread.querySelectorAll('.thinking-msg');
+  thinkingMsgs.forEach(m => m.remove());
+}
+
+function renderBlocks(blocks, scroll = true) {
+  hideThinking();
   const thread = document.getElementById('thread');
   if (!thread) return;
   const wrapper = document.createElement('div');
@@ -127,10 +225,11 @@ function renderBlocks(blocks) {
     wrapper.appendChild(renderBlock(block));
   });
   thread.appendChild(wrapper);
-  thread.parentElement.scrollTop = thread.parentElement.scrollHeight;
+  if (scroll) thread.parentElement.scrollTop = thread.parentElement.scrollHeight;
 }
 
 function renderBlock(block) {
+
   switch (block.type) {
     case 'flashcard_set': return renderFlashcardSet(block);
     case 'quiz':          return renderQuiz(block);
@@ -297,16 +396,155 @@ function escHtml(str) {
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
+function initTheme() {
+  const savedTheme = localStorage.getItem('smart_lms_theme');
+  if (savedTheme) {
+    document.documentElement.dataset.theme = savedTheme;
+  }
+}
+
 function toggleTheme() {
   const h = document.documentElement;
-  h.dataset.theme = h.dataset.theme === 'dark' ? 'light' : 'dark';
+  const newTheme = h.dataset.theme === 'dark' ? 'light' : 'dark';
+  h.dataset.theme = newTheme;
+  localStorage.setItem('smart_lms_theme', newTheme);
 }
 
-function togglePop() {
-  document.getElementById('pop').classList.toggle('open');
+function togglePop(e, id) {
+  if (e) e.stopPropagation();
+  // Close others
+  document.querySelectorAll('.popover').forEach(p => {
+    if (p.id !== id) p.classList.remove('open');
+  });
+  const pop = document.getElementById(id);
+  if (pop) pop.classList.toggle('open');
 }
 
-// ── Textarea auto-resize ──────────────────────────────────────────────────────
+// Close popover on outside click
+window.addEventListener('click', (e) => {
+  document.querySelectorAll('.popover').forEach(pop => {
+    if (pop.classList.contains('open') && !pop.contains(e.target) && !e.target.closest('.tool-btn')) {
+      pop.classList.remove('open');
+    }
+  });
+});
+
+async function loadMaterials(courseId) {
+  const docList = document.getElementById('doc-list');
+  if (!docList) return;
+  docList.innerHTML = '<div class="pop-item"><div class="sub">Loading materials...</div></div>';
+  try {
+    const res = await fetch(`/api/materials/${courseId}`);
+    const mats = await res.json();
+    if (!mats.length) {
+      docList.innerHTML = '<div class="pop-item"><div class="sub">No materials found.</div></div>';
+      return;
+    }
+    
+    // Add Select All button
+    let html = `
+      <div class="pop-item select-all" style="border-bottom: 1px solid var(--border); border-radius: 0; margin-bottom: 4px;">
+        <span class="ck"><i class="ph-bold ph-check"></i></span>
+        <div><div style="font-weight: 600;">Select / Deselect All</div></div>
+      </div>
+    `;
+    
+    html += mats.map(m => `
+      <div class="pop-item doc-item sel" data-doc-id="${m.id}" data-doc-title="${escHtml(m.title)}">
+        <span class="ck"><i class="ph-bold ph-check"></i></span>
+        <div><div class="sub" style="color:var(--text);">${escHtml(m.title)}</div></div>
+      </div>`).join('');
+      
+    docList.innerHTML = html;
+    
+    const selectAllBtn = docList.querySelector('.select-all');
+    let allSelected = true;
+    selectAllBtn.classList.add('sel'); // Initially all are selected
+    
+    selectAllBtn.addEventListener('click', () => {
+      allSelected = !allSelected;
+      if (allSelected) {
+        selectAllBtn.classList.add('sel');
+        docList.querySelectorAll('.doc-item').forEach(el => el.classList.add('sel'));
+      } else {
+        selectAllBtn.classList.remove('sel');
+        docList.querySelectorAll('.doc-item').forEach(el => el.classList.remove('sel'));
+      }
+      updateCourseChips();
+    });
+    
+    docList.querySelectorAll('.pop-item.doc-item').forEach(el => {
+      el.addEventListener('click', () => {
+        el.classList.toggle('sel');
+        updateCourseChips();
+        
+        // Update select all button state
+        const allItems = docList.querySelectorAll('.doc-item');
+        const selItems = docList.querySelectorAll('.doc-item.sel');
+        if (selItems.length === 0) {
+            selectAllBtn.classList.remove('sel');
+            allSelected = false;
+        } else if (selItems.length === allItems.length) {
+            selectAllBtn.classList.add('sel');
+            allSelected = true;
+        } else {
+            // Partially selected state (can just remove the checkmark for simplicity)
+            selectAllBtn.classList.remove('sel');
+            allSelected = false;
+        }
+      });
+    });
+    updateCourseChips(); // Refresh chips to show docs
+  } catch (_) {
+    docList.innerHTML = '<div class="pop-item"><div class="sub">Failed to load.</div></div>';
+  }
+}
+
+
+function toggleCourse(el) {
+  // Deselect others (single course logic for now to keep materials simple)
+  document.querySelectorAll('#course-list .pop-item').forEach(p => p.classList.remove('sel'));
+  el.classList.add('sel');
+  
+  const courseId = el.dataset.courseId;
+  const btnDocs = document.getElementById('btn-docs');
+  if (btnDocs) btnDocs.style.display = 'inline-flex';
+  
+  loadMaterials(courseId);
+  updateCourseChips();
+}
+
+function getSelectedDocIds() {
+  return [...document.querySelectorAll('#doc-list .pop-item.sel')]
+    .map(el => el.dataset.docId);
+}
+
+function updateCourseChips() {
+  const attached = document.querySelector('.attached');
+  if (!attached) return;
+  attached.innerHTML = '';
+  
+  document.querySelectorAll('#course-list .pop-item.sel').forEach(el => {
+    const name = el.querySelector('div > div').textContent.trim();
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.dataset.courseId = el.dataset.courseId;
+    
+    const docs = [...document.querySelectorAll('#doc-list .pop-item.sel')];
+    const docText = docs.length ? ` (+${docs.length} docs)` : '';
+    
+    chip.innerHTML = `<i class="ph lead ph-book-bookmark"></i> ${escHtml(name)}${docText} <span class="x"><i class="ph ph-x"></i></span>`;
+    chip.querySelector('.x').addEventListener('click', () => {
+      chip.remove();
+      el.classList.remove('sel');
+      const btnDocs = document.getElementById('btn-docs');
+      if (btnDocs) btnDocs.style.display = 'none';
+      document.getElementById('doc-list').innerHTML = '<div class="pop-item"><div class="sub">Select a course first</div></div>';
+    });
+    attached.appendChild(chip);
+  });
+}
+
 
 function initTextarea() {
   const ta = document.querySelector('textarea');
@@ -336,14 +574,26 @@ function doSend() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 window.addEventListener('DOMContentLoaded', () => {
+  initTheme();
   connectSSE();
   loadSessions();
   loadCourses();
   initTextarea();
+  initUserRow();
   const sendBtn = document.querySelector('.send');
   if (sendBtn) sendBtn.addEventListener('click', doSend);
   const newChat = document.querySelector('.new-chat');
-  if (newChat) newChat.addEventListener('click', () => {
-    window.location.href = `/?session=${crypto.randomUUID()}`;
+  if (newChat) newChat.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: "New Study Session" })
+      });
+      const data = await res.json();
+      if (data.id) window.location.href = `/?session=${data.id}`;
+    } catch (_) {
+      window.location.href = `/?session=${crypto.randomUUID()}`;
+    }
   });
 });
