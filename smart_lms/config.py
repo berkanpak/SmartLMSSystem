@@ -29,18 +29,29 @@ def ensure_dirs():
         CONFIG_FILE.write_text(json.dumps(_DEFAULTS, indent=2))
 
 
+_CONFIG_CACHE = None
+
+
 def get_config() -> dict:
+    global _CONFIG_CACHE
+    if _CONFIG_CACHE is not None:
+        return _CONFIG_CACHE
+
     ensure_dirs()
     try:
-        data = json.loads(CONFIG_FILE.read_text())
+        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         data = {}
-    return {**_DEFAULTS, **data}
+    
+    _CONFIG_CACHE = {**_DEFAULTS, **data}
+    return _CONFIG_CACHE
 
 
 def save_config(data: dict):
+    global _CONFIG_CACHE
     ensure_dirs()
-    CONFIG_FILE.write_text(json.dumps(data, indent=2))
+    CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    _CONFIG_CACHE = {**_DEFAULTS, **data}
 
 
 def get_lms_credentials() -> tuple[str | None, str | None]:

@@ -62,32 +62,83 @@ async def sse_events(session_id: str, request: Request):
 async def receive_prompt(session_id: str, request: Request):
     body = await request.json()
     _prompt_data[session_id] = body
-    event = _prompt_events.get(session_id)
-    if event:
-        event.set()
+    if session_id not in _prompt_events:
+        _prompt_events[session_id] = threading.Event()
+    _prompt_events[session_id].set()
     return JSONResponse({"ok": True})
 
 
 @app.get("/api/sessions")
-async def api_sessions():
+def api_sessions():
     from smart_lms.tools.sessions import _list_sessions_raw
     return JSONResponse(_list_sessions_raw())
 
 
 @app.get("/api/courses")
-async def api_courses():
+def api_courses():
     from smart_lms.tools.lms import _list_courses_raw
     return JSONResponse(_list_courses_raw())
 
 
 @app.get("/api/materials/{course_id}")
-async def api_materials(course_id: str):
+def api_materials(course_id: str):
     from smart_lms.tools.lms import _list_materials_raw
     return JSONResponse(_list_materials_raw(int(course_id)))
 
 
+@app.post("/api/sessions")
+async def api_create_session(request: Request):
+    from smart_lms.tools.sessions import _create_session
+    try:
+        body = await request.json()
+        title = body.get("title", "New Study Session")
+        course = body.get("course", "")
+        session_id = _create_session(title, course)
+        return JSONResponse({"id": session_id})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/sessions/{session_id}")
+def api_load_session(session_id: str):
+    from smart_lms.tools.sessions import _load_session
+    try:
+        data = _load_session(session_id)
+        return JSONResponse(data)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.delete("/api/sessions/{session_id}")
+def api_delete_session(session_id: str):
+    from smart_lms.tools.sessions import _session_path
+    try:
+        path = _session_path(session_id)
+        if path.exists():
+            path.unlink()
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@app.post("/api/sessions/{session_id}/rename")
+async def api_rename_session(session_id: str, request: Request):
+    from smart_lms.tools.sessions import _session_path
+    try:
+        body = await request.json()
+        new_title = body.get("title", "Untitled")
+        path = _session_path(session_id)
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data["title"] = new_title
+            path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 def _run_web_server(port: int):
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
     server = uvicorn.Server(config)
     _web_started.set()
     server.run()
