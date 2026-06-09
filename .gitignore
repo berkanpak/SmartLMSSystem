@@ -1,12 +1,9 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[cod]
+*.py[codz]
 *$py.class
-.env
-venv/
-ENV/
 
-# Skill files
+# Skill files (Custom)
 safe-api-performance-auditor/
 safe-api-performance-auditor-repo/
 safe-api-performance-auditor-repo.skill
@@ -14,7 +11,32 @@ performance_skill/
 
 # Temporary files
 temp_downloads/
+downloads/
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
 
 # IDE files
 .vscode/
 .idea/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Unit test / coverage reports
+.pytest_cache/
+.coverage
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS files
+.DS_Store
+Thumbs.db
