@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smart LMS — one-line installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/berkanpak/SmartLMSSystem/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/AlpDurak/SmartLMSSystem/main/install.sh | bash
 set -e
 
 REPO_URL="https://github.com/AlpDurak/SmartLMSSystem.git"

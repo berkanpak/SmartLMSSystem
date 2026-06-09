@@ -13,6 +13,8 @@ Usage:
 import argparse
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -39,19 +41,42 @@ def read_json(path: Path) -> dict:
 
 def write_json(path: Path, data: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
+    backup_file(path)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def write_text(path: Path, text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup_file(path)
+    path.write_text(text, encoding="utf-8")
+
+
+def backup_file(path: Path):
+    if not path.exists():
+        return
+    backup = path.with_name(path.name + ".smart-lms.bak")
+    if not backup.exists():
+        shutil.copy2(path, backup)
 
 HOME = Path.home()
 
 
 # ── MCP entry ─────────────────────────────────────────────────────────────────
 
-def mcp_entry(repo: Path) -> dict:
-    return {
+def mcp_env(repo: Path) -> dict:
+    return {"PYTHONPATH": str(repo)}
+
+
+def mcp_entry(repo: Path, *, include_type: bool = False) -> dict:
+    entry = {
         "command": sys.executable,
         "args": ["-m", "smart_lms.server"],
         "cwd": str(repo),
+        "env": mcp_env(repo),
     }
+    if include_type:
+        entry = {"type": "stdio", **entry}
+    return entry
 
 
 # ── Tool registrations ────────────────────────────────────────────────────────
@@ -71,6 +96,92 @@ def install_json_mcpServers(path: Path, repo: Path, uninstall: bool) -> str:
     return "registered"
 
 
+def remove_json_mcp_server(path: Path, name: str) -> bool:
+    cfg = read_json(path)
+    servers = cfg.get("mcpServers")
+    if not isinstance(servers, dict) or name not in servers:
+        return False
+    del servers[name]
+    if not servers:
+        del cfg["mcpServers"]
+    write_json(path, cfg)
+    return True
+
+
+def install_claude(path: Path, repo: Path, uninstall: bool) -> str:
+    """Claude Code user-scoped MCP lives in ~/.claude.json."""
+    cfg = read_json(path)
+    servers = cfg.setdefault("mcpServers", {})
+    if uninstall:
+        if "smart-lms" in servers:
+            del servers["smart-lms"]
+            if not servers:
+                del cfg["mcpServers"]
+            write_json(path, cfg)
+            remove_json_mcp_server(HOME / ".claude" / "settings.json", "smart-lms")
+            return "removed"
+        remove_json_mcp_server(HOME / ".claude" / "settings.json", "smart-lms")
+        return "not registered"
+
+    servers["smart-lms"] = mcp_entry(repo, include_type=True)
+    write_json(path, cfg)
+    remove_json_mcp_server(HOME / ".claude" / "settings.json", "smart-lms")
+    return "registered"
+
+
+def toml_string(value: str) -> str:
+    return json.dumps(value)
+
+
+def remove_codex_server_block(text: str) -> str:
+    lines = text.splitlines()
+    kept = []
+    skip = False
+    table_header = re.compile(r"^\s*\[")
+    smart_lms_header = re.compile(
+        r"^\s*\[\s*mcp_servers\.(?:smart-lms|\"smart-lms\")(?:\.|\])"
+    )
+
+    for line in lines:
+        if table_header.match(line):
+            skip = bool(smart_lms_header.match(line))
+            if skip:
+                continue
+        if not skip:
+            kept.append(line)
+
+    return "\n".join(kept).rstrip() + ("\n" if kept else "")
+
+
+def install_codex(path: Path, repo: Path, uninstall: bool) -> str:
+    """OpenAI Codex reads MCP servers from ~/.codex/config.toml."""
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    had_entry = "mcp_servers.smart-lms" in existing or 'mcp_servers."smart-lms"' in existing
+    text = remove_codex_server_block(existing)
+
+    if uninstall:
+        if had_entry:
+            write_text(path, text)
+            return "removed"
+        return "not registered"
+
+    block = textwrap.dedent(
+        f"""
+        [mcp_servers.smart-lms]
+        command = {toml_string(sys.executable)}
+        args = ["-m", "smart_lms.server"]
+        cwd = {toml_string(str(repo))}
+        startup_timeout_sec = 30
+
+        [mcp_servers.smart-lms.env]
+        PYTHONPATH = {toml_string(str(repo))}
+        """
+    ).strip()
+
+    write_text(path, (text.rstrip() + "\n\n" + block + "\n").lstrip())
+    return "registered"
+
+
 def install_zed(path: Path, repo: Path, uninstall: bool) -> str:
     """Zed uses context_servers with a different shape."""
     cfg = read_json(path)
@@ -82,11 +193,9 @@ def install_zed(path: Path, repo: Path, uninstall: bool) -> str:
             return "removed"
         return "not registered"
     servers["smart-lms"] = {
-        "command": {
-            "path": sys.executable,
-            "args": ["-m", "smart_lms.server"],
-            "env": {"PYTHONPATH": str(repo)},
-        }
+        "command": sys.executable,
+        "args": ["-m", "smart_lms.server"],
+        "env": mcp_env(repo),
     }
     write_json(path, cfg)
     return "registered"
@@ -129,14 +238,14 @@ def tools(repo: Path):
         (
             "Claude Code",
             HOME / ".claude",
-            HOME / ".claude" / "settings.json",
-            install_json_mcpServers,
+            HOME / ".claude.json",
+            install_claude,
         ),
         (
             "Codex CLI (OpenAI)",
             HOME / ".codex",
-            HOME / ".codex" / "config.json",
-            install_json_mcpServers,
+            HOME / ".codex" / "config.toml",
+            install_codex,
         ),
         (
             "Gemini CLI",
@@ -146,16 +255,14 @@ def tools(repo: Path):
         ),
         (
             "Cursor",
-            (APPDATA / "Cursor") if W else (HOME / ".config" / "Cursor"),
-            (APPDATA / "Cursor" / "User" / "globalStorage" / "rooveterinaryinc.roo-cline" / "mcp_settings.json")
-                if W else (HOME / ".cursor" / "mcp.json"),
+            HOME / ".cursor",
+            HOME / ".cursor" / "mcp.json",
             install_json_mcpServers,
         ),
         (
             "Windsurf (Codeium)",
-            (APPDATA / "Windsurf") if W else (HOME / ".codeium" / "windsurf"),
-            (APPDATA / "Windsurf" / "User" / "globalStorage" / "codeium.codeium" / "mcp_config.json")
-                if W else (HOME / ".codeium" / "windsurf" / "mcp_config.json"),
+            HOME / ".codeium" / "windsurf",
+            HOME / ".codeium" / "windsurf" / "mcp_config.json",
             install_json_mcpServers,
         ),
         (
@@ -249,14 +356,23 @@ Go back to Step 1.
 
 
 def install_skill(repo: Path, uninstall: bool):
-    """Copy SKILL.md to Claude Code, Codex, and Gemini skill directories."""
-    skill_file = repo / "smart_lms" / "skill" / "SKILL.md"
-    # Use bundled skill content (no file dependency)
-    content = SKILL_MD
+    """Copy SKILL.md to interoperable user skill directories."""
+    agent_skill_file = repo / ".agents" / "skills" / "smart-lms" / "SKILL.md"
+    content = (
+        agent_skill_file.read_text(encoding="utf-8")
+        if agent_skill_file.exists()
+        else SKILL_MD
+    )
 
     targets = [
         ("Claude Code skill", HOME / ".claude" / "skills" / "smart-lms" / "SKILL.md"),
-        ("Codex CLI skill",   HOME / ".codex"  / "skills" / "smart-lms" / "SKILL.md"),
+        ("Agent Skills user skill", HOME / ".agents" / "skills" / "smart-lms" / "SKILL.md"),
+        ("Gemini CLI skill", HOME / ".gemini" / "skills" / "smart-lms" / "SKILL.md"),
+        (
+            "Antigravity CLI skill",
+            HOME / ".gemini" / "antigravity-cli" / "skills" / "smart-lms" / "SKILL.md",
+        ),
+        ("Codex legacy skill", HOME / ".codex" / "skills" / "smart-lms" / "SKILL.md"),
     ]
 
     for label, dest in targets:
@@ -277,31 +393,12 @@ def install_skill(repo: Path, uninstall: bool):
     marker_start = "# [smart-lms skill]"
     marker_end   = "# [/smart-lms skill]"
 
-    if (HOME / ".gemini").exists():
-        existing = gemini_md.read_text(encoding="utf-8") if gemini_md.exists() else ""
-        if uninstall:
-            if marker_start in existing:
-                start = existing.index(marker_start)
-                end   = existing.index(marker_end) + len(marker_end)
-                gemini_md.write_text(
-                    (existing[:start] + existing[end:]).strip() + "\n",
-                    encoding="utf-8",
-                )
-                print(f"  {green('ok')} Gemini CLI skill removed")
-            else:
-                print(f"  {dim('--')} Gemini CLI skill (not installed)")
-        else:
-            block = f"\n{marker_start}\n{content}\n{marker_end}\n"
-            if marker_start in existing:
-                start = existing.index(marker_start)
-                end   = existing.index(marker_end) + len(marker_end)
-                new = existing[:start] + block.strip() + existing[end:]
-            else:
-                new = existing + block
-            gemini_md.parent.mkdir(parents=True, exist_ok=True)
-            gemini_md.write_text(new, encoding="utf-8")
-            print(f"  {green('ok')} Gemini CLI skill")
-            print(dim(f"    {gemini_md}"))
+    existing = gemini_md.read_text(encoding="utf-8") if gemini_md.exists() else ""
+    if marker_start in existing and marker_end in existing:
+        start = existing.index(marker_start)
+        end = existing.index(marker_end) + len(marker_end)
+        write_text(gemini_md, (existing[:start] + existing[end:]).strip() + "\n")
+        print(f"  {green('ok')} removed old Gemini GEMINI.md skill block")
 
 
 def main():
@@ -331,15 +428,13 @@ def main():
     skipped = []
 
     for name, detect, cfg_path, handler in tools(repo):
-        if not detect.exists():
-            skipped.append(name)
-            continue
         result = handler(cfg_path, repo, args.uninstall)
         verb = {"registered": "ok", "removed": "ok", "not registered": "--"}[result]
         color = green if result in ("registered", "removed") else dim
         print(f"  {color(verb)} {name} MCP")
         print(dim(f"    {cfg_path}"))
-        registered.append(name)
+        if result in ("registered", "removed"):
+            registered.append(name)
 
     print()
     print(bold("  Skills:"))

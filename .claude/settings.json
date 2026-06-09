@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "smart-lms": {
-      "command": "C:\\Python313\\python.exe",
-      "args": ["-m", "smart_lms.server"],
-      "cwd": "C:\\Users\\USER\\Documents\\Code\\SmartLMSSystem"
-    }
-  }
-}

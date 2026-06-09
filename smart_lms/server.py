@@ -21,4 +21,4 @@ register_drive_tools(mcp)
 register_notebooklm_tools(mcp)
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="stdio", show_banner=False)

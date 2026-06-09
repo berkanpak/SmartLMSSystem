@@ -13,18 +13,23 @@ Type `/smart-lms` and get a browser chat UI that renders your course materials a
 irm https://raw.githubusercontent.com/AlpDurak/SmartLMSSystem/main/install.ps1 | iex
 ```
 
+From `cmd.exe` or a locked-down PowerShell profile:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/AlpDurak/SmartLMSSystem/main/install.ps1 | iex"
+```
+
 **macOS / Linux / Git Bash:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AlpDurak/SmartLMSSystem/main/install.sh | bash
 ```
 
-Detects and registers the MCP server **and** the `/smart-lms` skill in every AI coding tool found on your machine:
+Installs the MCP server **and** the `/smart-lms` skill in user/global locations for common AI coding tools:
 
 | Tool | Config written |
 |------|---------------|
-| Claude Code | `~/.claude/settings.json` |
-| Codex CLI (OpenAI) | `~/.codex/config.json` |
-| Gemini CLI | `~/.gemini/settings.json` |
+| Claude Code | `~/.claude.json` + `~/.claude/skills/smart-lms/SKILL.md` |
+| Codex CLI (OpenAI) | `~/.codex/config.toml` + `~/.agents/skills/smart-lms/SKILL.md` |
+| Gemini CLI / Antigravity CLI | `~/.gemini/settings.json` + `~/.agents/skills/smart-lms/SKILL.md` |
 | Cursor | `~/.cursor/mcp.json` |
 | Windsurf (Codeium) | `~/.codeium/windsurf/mcp_config.json` |
 | Zed | `~/.config/zed/settings.json` |
@@ -141,7 +146,7 @@ Every conversation is persisted at `~/.smart-lms/sessions/<uuid>.json`. The side
 ## Development
 
 ```bash
-git clone https://github.com/berkanpak/SmartLMSSystem.git
+git clone https://github.com/AlpDurak/SmartLMSSystem.git
 cd SmartLMSSystem
 pip install -r requirements.txt
 python -m pytest tests/ -v
