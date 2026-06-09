@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "smart-lms": {
+      "command": "python",
+      "args": ["-m", "smart_lms.server"],
+      "cwd": "C:\\Users\\USER\\Documents\\Code\\SmartLMSSystem"
+    }
+  }
+}
