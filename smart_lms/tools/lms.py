@@ -21,8 +21,14 @@ def _material_id(file_url: str) -> str:
     return hashlib.md5(file_url.encode()).hexdigest()[:12]
 
 
+_scraper: Optional[LMSScraper] = None
+
+
 def _get_scraper() -> LMSScraper:
-    return LMSScraper(base_url=get_config()["lms_base_url"])
+    global _scraper
+    if _scraper is None:
+        _scraper = LMSScraper(base_url=get_config()["lms_base_url"])
+    return _scraper
 
 
 def _list_courses_raw() -> list[dict]:
@@ -59,19 +65,26 @@ def _get_material_text_raw(course_id: int, material_ids: list[str]) -> list[dict
     Returns [{title, text}] or [{title, text, error}] on failure."""
     all_mats = _list_materials_raw(course_id)
     selected = [m for m in all_mats if m["id"] in material_ids]
+    scraper = _get_scraper()
     
     def process_material(mat, tmp_dir):
+        print(f"DEBUG: Processing {mat['title']}...", file=sys.stderr)
         try:
-            resp = requests.get(mat["link"], stream=True, timeout=30)
+            resp = scraper.session.get(mat["link"], stream=True, timeout=30)
             resp.raise_for_status()
             fpath = os.path.join(tmp_dir, mat["title"])
             with open(fpath, "wb") as f:
                 for chunk in resp.iter_content(8192):
                     f.write(chunk)
+            print(f"DEBUG: Downloaded {mat['title']}, extracting text...", file=sys.stderr)
             text = extract_document_text(fpath)
+            print(f"DEBUG: Extracted {len(text)} chars from {mat['title']}", file=sys.stderr)
             if text.strip():
                 return {"title": mat["title"], "text": text}
+            else:
+                print(f"DEBUG: No text extracted from {mat['title']}", file=sys.stderr)
         except Exception as e:
+            print(f"DEBUG: Error processing {mat['title']}: {e}", file=sys.stderr)
             return {"title": mat["title"], "text": "", "error": str(e)}
         return None
 

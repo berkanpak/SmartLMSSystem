@@ -17,6 +17,12 @@ def _session_path(session_id: str):
     return SESSIONS_DIR / f"{session_id}.json"
 
 
+def _turns_path(session_id: str):
+    if not _UUID_RE.match(session_id):
+        raise ValueError(f"Invalid session_id: {session_id!r}")
+    return SESSIONS_DIR / f"{session_id}.jsonl"
+
+
 _SESSIONS_CACHE: list[dict] | None = None
 
 
@@ -33,12 +39,22 @@ def _list_sessions_raw() -> list[dict]:
                     reverse=True):
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
+            turns_p = _turns_path(data["id"])
+            turn_count = 0
+            if turns_p.exists():
+                with open(turns_p, "rb") as f:
+                    for _ in f:
+                        turn_count += 1
+            else:
+                # Compatibility with old single-file sessions
+                turn_count = len(data.get("turns", []))
+
             sessions.append({
                 "id": data["id"],
                 "title": data.get("title", "Untitled"),
                 "course": data.get("course", ""),
                 "created_at": data.get("created_at", ""),
-                "turn_count": len(data.get("turns", [])),
+                "turn_count": turn_count,
             })
         except Exception:
             continue
@@ -55,7 +71,6 @@ def _create_session(title: str, course: str = "") -> str:
         "title": title,
         "course": course,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "turns": [],
     }
     _session_path(session_id).write_text(json.dumps(data, indent=2), encoding="utf-8")
     
@@ -80,28 +95,50 @@ def _save_turn(session_id: str, role: str, text: str,
     path = _session_path(session_id)
     if not path.exists():
         raise FileNotFoundError(f"Session {session_id} not found")
-    data = json.loads(path.read_text(encoding="utf-8"))
+    
     turn = {"role": role, "text": text, "sources": sources}
     if blocks:
         turn["blocks"] = blocks
-    data["turns"].append(turn)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        
+    # Append to JSONL file
+    t_path = _turns_path(session_id)
+    with open(t_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(turn) + "\n")
     
     # Update cache turn count
     if _SESSIONS_CACHE is not None:
         for s in _SESSIONS_CACHE:
             if s["id"] == session_id:
-                s["turn_count"] = len(data["turns"])
+                s["turn_count"] += 1
                 break
     
     return session_id
+
+
+def _clear_session_cache():
+    global _SESSIONS_CACHE
+    _SESSIONS_CACHE = None
 
 
 def _load_session(session_id: str) -> dict:
     path = _session_path(session_id)
     if not path.exists():
         return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    
+    turns = []
+    t_path = _turns_path(session_id)
+    if t_path.exists():
+        with open(t_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    turns.append(json.loads(line))
+    elif "turns" in data:
+        # Compatibility with old single-file sessions
+        turns = data["turns"]
+        
+    data["turns"] = turns
+    return data
 
 
 def register_session_tools(mcp: FastMCP):

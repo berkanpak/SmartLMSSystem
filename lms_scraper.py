@@ -7,6 +7,7 @@ class LMSScraper:
         self.rest_endpoint = f"{self.base_url}/webservice/rest/server.php"
         self.token_endpoint = f"{self.base_url}/login/token.php"
         self.service = "moodle_mobile_app"
+        self.session = requests.Session()
         
         # Keep track of tokens per user to avoid fetching repeatedly in a session
         self.tokens = {}
@@ -23,7 +24,7 @@ class LMSScraper:
         }
         
         try:
-            response = requests.post(self.token_endpoint, data=params, timeout=10)
+            response = self.session.post(self.token_endpoint, data=params, timeout=10)
             data = response.json()
             
             if "token" in data:
@@ -46,13 +47,13 @@ class LMSScraper:
         }
         
         try:
-            response = requests.post(self.rest_endpoint, data=params, timeout=10)
+            response = self.session.post(self.rest_endpoint, data=params, timeout=10)
             data = response.json()
             if "userid" in data:
                 self.user_ids[username] = data["userid"]
                 return data["userid"]
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"User ID Error: {e}")
         return None
 
     def login_test(self, username, password):
@@ -78,7 +79,7 @@ class LMSScraper:
         }
 
         try:
-            response = requests.post(self.rest_endpoint, data=params, timeout=10)
+            response = self.session.post(self.rest_endpoint, data=params, timeout=10)
             data = response.json()
             
             courses = []
@@ -124,7 +125,7 @@ class LMSScraper:
 
         materials = []
         try:
-            response = requests.post(self.rest_endpoint, data=params, timeout=15)
+            response = self.session.post(self.rest_endpoint, data=params, timeout=15)
             sections = response.json()
             
             if isinstance(sections, list):
@@ -149,7 +150,7 @@ class LMSScraper:
             return []
 
     def download_materials(self, username, password, material_links, download_dir="temp_downloads"):
-        """Download materials directly using requests."""
+        """Download materials directly using requests session."""
         if not os.path.exists(download_dir):
             os.makedirs(download_dir)
             
@@ -171,7 +172,7 @@ class LMSScraper:
                 file_path = os.path.join(download_dir, filename)
                 
                 # Direct HTTP download
-                response = requests.get(material_link, stream=True, timeout=30)
+                response = self.session.get(material_link, stream=True, timeout=30)
                 response.raise_for_status()
                 
                 with open(file_path, "wb") as f:

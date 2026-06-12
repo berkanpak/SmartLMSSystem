@@ -1,9 +1,10 @@
+import queue
 import threading
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from smart_lms.tools.ui_bridge import app, _prompt_data, _prompt_events, _sse_queues
+from smart_lms.tools.ui_bridge import app, _prompt_buffers, _prompt_events, _sse_subscribers
 
 client = TestClient(app)
 
@@ -14,16 +15,16 @@ def test_root_returns_html():
     assert "text/html" in r.headers["content-type"]
 
 
-def test_post_prompt_sets_event():
+def test_post_prompt_buffers_data():
     sid = "test-session-1"
-    event = threading.Event()
-    _prompt_events[sid] = event
     r = client.post(f"/api/prompt/{sid}", json={"text": "hello", "course_ids": [1]})
     assert r.status_code == 200
-    assert event.is_set()
-    assert _prompt_data[sid]["text"] == "hello"
-    _prompt_events.pop(sid, None)
-    _prompt_data.pop(sid, None)
+    
+    assert sid in _prompt_buffers
+    data = _prompt_buffers[sid].get_nowait()
+    assert data["text"] == "hello"
+    
+    _prompt_buffers.pop(sid, None)
 
 
 def test_api_sessions_returns_list():

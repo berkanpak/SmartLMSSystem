@@ -3,8 +3,10 @@ import queue
 import threading
 import uuid
 import webbrowser
+import asyncio
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
+import sys
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -14,11 +16,15 @@ from fastmcp import FastMCP
 
 from smart_lms.config import find_free_port, get_config
 
-_prompt_events: dict[str, threading.Event] = {}
-_prompt_data: dict[str, dict] = {}
-_sse_queues: dict[str, queue.Queue] = {}
+_prompt_events: Dict[str, threading.Event] = {}
+_prompt_buffers: Dict[str, queue.Queue] = {}
+_sse_subscribers: Dict[str, List[queue.Queue]] = {}
 _web_port: int = 0
 _web_started = threading.Event()
+
+# Aliases for backward compatibility with daemon and wait_loop
+_prompt_data = _prompt_buffers
+_sse_queues = _sse_subscribers
 
 app = FastAPI()
 UI_DIR = Path(__file__).parent.parent / "ui"
@@ -31,15 +37,18 @@ if UI_DIR.exists():
 async def root():
     index = UI_DIR / "index.html"
     if index.exists():
-        return HTMLResponse(index.read_text())
+        content = await asyncio.to_thread(index.read_text, encoding="utf-8")
+        return HTMLResponse(content)
     return HTMLResponse("<h1>UI not built</h1>")
 
 
 @app.get("/api/events/{session_id}")
 async def sse_events(session_id: str, request: Request):
-    import asyncio
     q: queue.Queue = queue.Queue()
-    _sse_queues[session_id] = q
+    if session_id not in _sse_subscribers:
+        _sse_subscribers[session_id] = []
+    _sse_subscribers[session_id].append(q)
+    print(f"SSE: New subscriber for {session_id}. Total: {len(_sse_subscribers[session_id])}", file=sys.stderr)
 
     async def generate():
         loop = asyncio.get_event_loop()
@@ -48,12 +57,19 @@ async def sse_events(session_id: str, request: Request):
                 if await request.is_disconnected():
                     break
                 try:
-                    data = await loop.run_in_executor(None, lambda: q.get(timeout=30))
+                    # Priority 1: Check queue with small timeout
+                    data = await loop.run_in_executor(None, lambda: q.get(timeout=2.0))
                     yield f"data: {data}\n\n"
                 except queue.Empty:
+                    # Priority 2: Keepalive only if empty
                     yield ": keepalive\n\n"
         finally:
-            _sse_queues.pop(session_id, None)
+            if session_id in _sse_subscribers:
+                if q in _sse_subscribers[session_id]:
+                    _sse_subscribers[session_id].remove(q)
+                if not _sse_subscribers[session_id]:
+                    _sse_subscribers.pop(session_id)
+            print(f"SSE: Subscriber disconnected for {session_id}", file=sys.stderr)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -61,10 +77,18 @@ async def sse_events(session_id: str, request: Request):
 @app.post("/api/prompt/{session_id}")
 async def receive_prompt(session_id: str, request: Request):
     body = await request.json()
-    _prompt_data[session_id] = body
+    print(f"API: Received prompt for {session_id}: {body.get('text', '')[:20]}...", file=sys.stderr)
+    if session_id not in _prompt_buffers:
+        _prompt_buffers[session_id] = queue.Queue()
+    
+    _prompt_buffers[session_id].put(body)
+    
     if session_id not in _prompt_events:
         _prompt_events[session_id] = threading.Event()
+    
+    print(f"API: Triggering event for {session_id}", file=sys.stderr)
     _prompt_events[session_id].set()
+    
     return JSONResponse({"ok": True})
 
 
@@ -109,13 +133,27 @@ def api_load_session(session_id: str):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
+def _delete_session_data(session_id: str):
+    """Purge all global memory buffers for a session."""
+    _prompt_buffers.pop(session_id, None)
+    _prompt_events.pop(session_id, None)
+    _sse_subscribers.pop(session_id, None)
+
+
 @app.delete("/api/sessions/{session_id}")
 def api_delete_session(session_id: str):
-    from smart_lms.tools.sessions import _session_path
+    from smart_lms.tools.sessions import _session_path, _turns_path, _clear_session_cache
     try:
         path = _session_path(session_id)
         if path.exists():
             path.unlink()
+        t_path = _turns_path(session_id)
+        if t_path.exists():
+            t_path.unlink()
+        
+        _delete_session_data(session_id)
+        _clear_session_cache()
+        
         return JSONResponse({"ok": True})
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
@@ -129,16 +167,17 @@ async def api_rename_session(session_id: str, request: Request):
         new_title = body.get("title", "Untitled")
         path = _session_path(session_id)
         if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data_str = await asyncio.to_thread(path.read_text, encoding="utf-8")
+            data = json.loads(data_str)
             data["title"] = new_title
-            path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            await asyncio.to_thread(path.write_text, json.dumps(data, indent=2), encoding="utf-8")
         return JSONResponse({"ok": True})
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 def _run_web_server(port: int):
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(config)
     _web_started.set()
     server.run()
@@ -168,21 +207,50 @@ def register_ui_bridge_tools(mcp: FastMCP):
         return {"session_id": sid, "url": url, "port": _web_port}
 
     @mcp.tool()
-    def wait_for_prompt(session_id: str) -> dict:
-        """Block until user submits a prompt in the browser.
-        Returns {text, course_ids, doc_ids, drive_files}."""
-        event = threading.Event()
-        _prompt_events[session_id] = event
-        _prompt_data.pop(session_id, None)
-        event.wait()
-        _prompt_events.pop(session_id, None)
-        return _prompt_data.pop(session_id, {})
+    def check_prompt(session_id: str) -> dict:
+        """Check if user submitted a prompt in the browser. Returns immediately.
+        Returns {text, course_ids, doc_ids, drive_files} or {"status": "no_prompt"}."""
+        if session_id in _prompt_buffers:
+            try:
+                return _prompt_buffers[session_id].get_nowait()
+            except queue.Empty:
+                pass
+        return {"status": "no_prompt"}
+
+    @mcp.tool()
+    def wait_for_prompt(session_id: str, timeout: int = 60) -> dict:
+        """Wait for the user to submit a prompt in the browser. Blocks until a prompt is received or timeout.
+        Returns the prompt data or {"status": "timeout"}."""
+        if session_id not in _prompt_events:
+            _prompt_events[session_id] = threading.Event()
+        
+        # Check if there's already something in the buffer
+        if session_id in _prompt_buffers and not _prompt_buffers[session_id].empty():
+            try:
+                return _prompt_buffers[session_id].get_nowait()
+            except queue.Empty:
+                pass
+
+        print(f"WAIT: Waiting for prompt on {session_id} (timeout={timeout}s)...", file=sys.stderr)
+        event = _prompt_events[session_id]
+        event.clear() # Clear before waiting
+        
+        if event.wait(timeout=timeout):
+            print(f"WAIT: Prompt received for {session_id}", file=sys.stderr)
+            event.clear()
+            if session_id in _prompt_buffers:
+                try:
+                    return _prompt_buffers[session_id].get_nowait()
+                except queue.Empty:
+                    pass
+        
+        return {"status": "timeout"}
 
     @mcp.tool()
     def render(session_id: str, blocks: list) -> str:
         """Push card blocks to the browser via SSE."""
         payload = json.dumps({"type": "blocks", "blocks": blocks})
-        q = _sse_queues.get(session_id)
-        if q:
+        subs = _sse_subscribers.get(session_id, [])
+        for q in subs:
             q.put(payload)
         return "ok"

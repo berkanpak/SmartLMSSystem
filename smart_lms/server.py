@@ -8,9 +8,9 @@ from smart_lms.tools.notebooklm import register_notebooklm_tools
 mcp = FastMCP(
     "smart-lms",
     instructions=(
-        "Smart LMS — tools for teaching students using their Moodle LMS course "
-        "materials. Start a session with start_ui, wait for prompts with "
-        "wait_for_prompt, render content with render."
+        "Smart LMS - tools for teaching students using their Moodle LMS course "
+        "materials. Start a session with start_ui, check for prompts with "
+        "check_prompt, render content with render."
     ),
 )
 
