@@ -21,7 +21,7 @@ Run it from the SmartLMSSystem repo directory, or set `PYTHONPATH` to that direc
 ## Boot Sequence
 
 1. Call `start_ui()`. It launches the browser UI and returns `{session_id, url, port}`. Save `session_id` for the rest of the session.
-2. Call `list_courses()` to confirm LMS credentials are working. If the result is empty, tell the user: "Your LMS credentials are not set. Call setup_lms_credentials(username, password) to configure them."
+2. Call `list_courses()` to confirm LMS credentials are working. If the result is empty, tell the user: "Your LMS credentials are not set. Please configure them using one of these methods: (1) run `python setup_credentials.py` in the terminal, or (2) click the ⚙ gear icon in the bottom-left of the browser UI. Your password is stored securely and never needs to be typed in this chat."
 3. Call `create_session(title="New session", course="")` to start persisting this conversation.
 
 ## Study Loop

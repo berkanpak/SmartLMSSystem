@@ -112,14 +112,106 @@ async function loadSessions() {
   } catch (_) {}
 }
 
-function initUserRow() {
-  const userRow = document.querySelector('.user-row');
-  if (userRow) {
-    userRow.addEventListener('click', () => {
-      alert("Student Profile: 24soft1016@isik.edu.tr\nLMS connected successfully.");
+// ── Credentials & Settings Modal ─────────────────────────────────────────────
+
+async function checkCredentialStatus() {
+  try {
+    const res = await fetch('/api/credential-status');
+    if (!res.ok) return;
+    const data = await res.json();
+    const avatar = document.getElementById('user-avatar');
+    const label = document.getElementById('user-label');
+    if (data.connected) {
+      if (avatar) { avatar.classList.add('connected'); avatar.textContent = data.username[0].toUpperCase(); }
+      if (label) label.textContent = data.username;
+    } else {
+      if (avatar) { avatar.classList.remove('connected'); avatar.textContent = 'U'; }
+      if (label) label.textContent = 'Not connected';
+    }
+  } catch (_) {}
+}
+
+function openSettings() {
+  const modal = document.getElementById('settings-modal');
+  if (!modal) return;
+  // Pre-fill username if already set
+  fetch('/api/credential-status').then(r => r.json()).then(data => {
+    const u = document.getElementById('cred-username');
+    if (u && data.username) u.value = data.username;
+    const statusEl = document.getElementById('cred-status');
+    if (statusEl) {
+      if (data.connected) {
+        statusEl.className = 'cred-status ok';
+        statusEl.textContent = `Connected as ${data.username}`;
+        statusEl.style.display = 'block';
+      } else {
+        statusEl.style.display = 'none';
+      }
+    }
+  }).catch(() => {});
+  modal.style.display = 'flex';
+  setTimeout(() => document.getElementById('cred-username')?.focus(), 50);
+}
+
+function closeSettings() {
+  const modal = document.getElementById('settings-modal');
+  if (modal) modal.style.display = 'none';
+  const statusEl = document.getElementById('cred-status');
+  if (statusEl) statusEl.style.display = 'none';
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('settings-modal')) closeSettings();
+}
+
+async function saveCredentials() {
+  const username = document.getElementById('cred-username')?.value.trim();
+  const password = document.getElementById('cred-password')?.value.trim();
+  const statusEl = document.getElementById('cred-status');
+  const btn = document.getElementById('btn-save-creds');
+
+  if (!username || !password) {
+    statusEl.className = 'cred-status err';
+    statusEl.textContent = 'Please enter both username and password.';
+    statusEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  setBtnContent(btn, 'ph ph-circle-notch', 'Connecting…');
+  if (statusEl) statusEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/setup-credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
     });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.className = 'cred-status ok';
+      statusEl.textContent = `Connected successfully as ${username}`;
+      statusEl.style.display = 'block';
+      document.getElementById('cred-password').value = '';
+      checkCredentialStatus();
+      loadCourses();
+      setTimeout(closeSettings, 1200);
+    } else {
+      statusEl.className = 'cred-status err';
+      statusEl.textContent = data.error || 'Connection failed.';
+      statusEl.style.display = 'block';
+    }
+  } catch (e) {
+    statusEl.className = 'cred-status err';
+    statusEl.textContent = 'Network error. Is the server running?';
+    statusEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    setBtnContent(btn, 'ph ph-floppy-disk', 'Save & Connect');
   }
 }
+
+function initUserRow() {}
 
 // ── Course picker ─────────────────────────────────────────────────────────────
 
@@ -386,6 +478,14 @@ function mkBlockHead(icon, label) {
   return div;
 }
 
+function setBtnContent(btn, iconClass, text) {
+  btn.textContent = '';
+  const icon = document.createElement('i');
+  icon.className = iconClass;
+  btn.appendChild(icon);
+  btn.appendChild(document.createTextNode(' ' + text));
+}
+
 function escHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -578,6 +678,7 @@ window.addEventListener('DOMContentLoaded', () => {
   connectSSE();
   loadSessions();
   loadCourses();
+  checkCredentialStatus();
   initTextarea();
   initUserRow();
   const sendBtn = document.querySelector('.send');
