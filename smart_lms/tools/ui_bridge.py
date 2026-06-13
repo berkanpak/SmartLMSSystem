@@ -68,6 +68,39 @@ async def receive_prompt(session_id: str, request: Request):
     return JSONResponse({"ok": True})
 
 
+@app.get("/api/credential-status")
+def api_credential_status():
+    from smart_lms.config import get_lms_credentials, get_config
+    username, password = get_lms_credentials()
+    cfg = get_config()
+    connected = bool(username and password)
+    return JSONResponse({
+        "connected": connected,
+        "username": username or "",
+        "lms_url": cfg.get("lms_base_url", ""),
+    })
+
+
+@app.post("/api/setup-credentials")
+async def api_setup_credentials(request: Request):
+    from smart_lms.config import store_lms_credentials
+    from smart_lms.tools.lms import _get_scraper
+    try:
+        body = await request.json()
+        username = body.get("username", "").strip()
+        password = body.get("password", "").strip()
+        if not username or not password:
+            return JSONResponse({"ok": False, "error": "Username and password are required."}, status_code=400)
+        store_lms_credentials(username, password)
+        scraper = _get_scraper()
+        ok = scraper.login_test(username, password)
+        if not ok:
+            return JSONResponse({"ok": False, "error": "Login failed. Check your credentials."}, status_code=401)
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 @app.get("/api/sessions")
 def api_sessions():
     from smart_lms.tools.sessions import _list_sessions_raw

@@ -29,21 +29,25 @@ def ensure_dirs():
         CONFIG_FILE.write_text(json.dumps(_DEFAULTS, indent=2))
 
 
-_CONFIG_CACHE = None
+_CONFIG_CACHE: dict | None = None
+_CONFIG_MTIME: float = 0.0
 
 
 def get_config() -> dict:
-    global _CONFIG_CACHE
-    if _CONFIG_CACHE is not None:
-        return _CONFIG_CACHE
-
+    global _CONFIG_CACHE, _CONFIG_MTIME
     ensure_dirs()
+    try:
+        mtime = CONFIG_FILE.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    if _CONFIG_CACHE is not None and mtime == _CONFIG_MTIME:
+        return _CONFIG_CACHE
     try:
         data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         data = {}
-    
     _CONFIG_CACHE = {**_DEFAULTS, **data}
+    _CONFIG_MTIME = mtime
     return _CONFIG_CACHE
 
 

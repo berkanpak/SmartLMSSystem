@@ -89,13 +89,6 @@ def _get_material_text_raw(course_id: int, material_ids: list[str]) -> list[dict
 def register_lms_tools(mcp: FastMCP):
 
     @mcp.tool()
-    def setup_lms_credentials(username: str, password: str) -> bool:
-        """Store Moodle credentials in the OS keychain and verify login."""
-        store_lms_credentials(username, password)
-        scraper = _get_scraper()
-        return scraper.login_test(username, password)
-
-    @mcp.tool()
     def list_courses() -> list[dict]:
         """List all enrolled courses. Returns [{id, name}]."""
         return _list_courses_raw()

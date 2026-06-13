@@ -322,7 +322,10 @@ from the SmartLMSSystem repo directory.
    `{session_id, url, port}`. Save `session_id` for the rest of the session.
 2. Call `list_courses()` to confirm LMS credentials are working.
    If the result is empty, tell the user: "Your LMS credentials are not set.
-   Call setup_lms_credentials(username, password) to configure them."
+   Please configure them using one of these methods: (1) run
+   `python setup_credentials.py` in the terminal, or (2) click the ⚙ gear
+   icon in the bottom-left of the browser UI. Your password is stored
+   securely and never needs to be typed in this chat."
 3. Call `create_session(title="New session", course="")` to start
    persisting this conversation.
 
@@ -450,8 +453,9 @@ def main():
         print()
         print(bold("  Next steps:"))
         print("  1. Reload / restart your AI coding tool")
-        print("  2. Set your Moodle credentials once:")
-        print(dim('     call setup_lms_credentials("your@email.com", "password")'))
+        print("  2. Set your Moodle credentials (choose one):")
+        print(dim("     python setup_credentials.py          ← terminal (recommended)"))
+        print(dim("     or click ⚙ in the browser UI sidebar  ← after /smart-lms"))
         print("  3. Type  /smart-lms  to launch the study UI")
         print()
 

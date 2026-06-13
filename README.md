@@ -64,11 +64,18 @@ python install.py --uninstall
 
 After installing, reload your AI coding tool and:
 
-1. Set your Moodle credentials once:
+1. **Set your Moodle credentials** — choose either method:
 
+   **Option A — Terminal (recommended):**
+   ```bash
+   python setup_credentials.py
    ```
-   call setup_lms_credentials("student@isik.edu.tr", "yourpassword")
-   ```
+   You'll be prompted for your username and password. The password input is hidden (not echoed) and is stored directly in the OS keychain — it never appears in any chat or log.
+
+   **Option B — Browser UI:**
+   Type `/smart-lms` to open the study UI, then click the **⚙ gear icon** in the bottom-left corner of the sidebar. Enter your credentials in the settings panel that appears.
+
+   > **Security note:** Your password (typically your TC ID) is stored in the system keychain only. It is never sent to or seen by the AI.
 
 2. Type `/smart-lms` to open the study UI in your browser.
 
@@ -92,15 +99,17 @@ After installing, reload your AI coding tool and:
               flashcards · quizzes · summaries · exams
 ```
 
-The MCP server exposes 17 tools across five modules:
+The MCP server exposes 16 tools across five modules:
 
 | Module       | Tools                                                                                |
 | ------------ | ------------------------------------------------------------------------------------ |
-| LMS          | `setup_lms_credentials` `list_courses` `list_materials` `get_material_text`          |
+| LMS          | `list_courses` `list_materials` `get_material_text`                                  |
 | Sessions     | `create_session` `save_turn` `list_sessions` `load_session`                          |
 | UI bridge    | `start_ui` `wait_for_prompt` `render`                                                |
 | Google Drive | `connect_google_drive` `search_drive_files` `get_drive_file_text`                    |
 | NotebookLM   | `connect_notebooklm` `list_notebooks` `get_notebook_content` (stub — API in preview) |
+
+Credentials are managed outside the AI via `setup_credentials.py` (CLI) or the browser UI settings panel — not through a tool call.
 
 The host agent is the reasoning brain — it calls tools to gather source text, generates card-block JSON, and pushes it to the browser via SSE. No AI runs inside the MCP server itself.
 
